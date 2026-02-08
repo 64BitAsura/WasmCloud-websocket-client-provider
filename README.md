@@ -11,45 +11,69 @@ A unidirectional WebSocket client provider for WasmCloud that receives messages 
 - 🔒 **TLS Support**: Secure WebSocket connections (wss://)
 - 🧪 **Well Tested**: Unit and integration tests with deployment testing
 
+## Important Note on wash CLI
+
+**This project should ideally be initialized using the `wash` CLI**, which is the official wasmCloud tooling. Due to environment constraints during initial development, this implementation was created with `cargo init`. For production use and proper wasmCloud integration, please refer to [WASH_CLI.md](./WASH_CLI.md) for:
+
+- Installing wash CLI
+- Re-initializing this project with proper scaffolding
+- Best practices for wasmCloud provider development
+
 ## Quick Start
 
 ### Prerequisites
 
 - Rust 1.75 or later
-- WasmCloud runtime
+- WasmCloud runtime (optional, for deployment)
 - NATS server (typically included with WasmCloud)
+- wash CLI (recommended, see [WASH_CLI.md](./WASH_CLI.md))
 
 ### Building
 
 ```bash
-# Development build
-cargo build
+# Using Make (recommended)
+make build          # Development build
+make release        # Release build
 
-# Release build
+# Or using Cargo directly
+cargo build
 cargo build --release
 ```
 
 ### Testing
 
 ```bash
-# Run all tests
+# Using Make
+make test           # Run all tests
+make test-verbose   # Run with output
+
+# Or using Cargo
 cargo test
-
-# Run unit tests only
-cargo test --lib
-
-# Run with output
 cargo test -- --nocapture
 ```
 
 ### Linting & Formatting
 
 ```bash
-# Format code
-cargo fmt
+# Using Make
+make fmt           # Format code
+make lint          # Run clippy
+make check         # Run both fmt-check and lint
+make all           # Format, lint, test, and build
 
-# Run clippy
+# Or using Cargo
+cargo fmt
 cargo clippy -- -D warnings
+```
+
+### Development
+
+```bash
+# See all available commands
+make help
+
+# Run the full CI pipeline locally
+make ci
 ```
 
 ## Configuration
