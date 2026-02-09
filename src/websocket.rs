@@ -11,7 +11,7 @@ use tracing::{debug, error, info, warn};
 
 use crate::config::ProviderConfig;
 
-/// WebSocket client that receives messages from a remote server
+/// WebSocket client that connects to a remote server and receives messages
 pub struct WebSocketClient {
     config: Arc<ProviderConfig>,
     message_tx: mpsc::UnboundedSender<Vec<u8>>,
@@ -23,71 +23,63 @@ impl WebSocketClient {
         Self { config, message_tx }
     }
 
-    /// Start the WebSocket client with automatic reconnection
+    /// Run the WebSocket client with auto-reconnection
     pub async fn run(&self) {
         let mut attempt = 0u32;
 
         loop {
             info!(
-                "Attempting to connect to WebSocket server: {}",
+                "Connecting to WebSocket server: {}",
                 self.config.websocket_url
             );
 
-            match self.connect_and_listen().await {
-                Ok(()) => {
+            match self.connect_and_receive().await {
+                Ok(_) => {
                     info!("WebSocket connection closed normally");
-                    // Reset attempt counter on successful connection
-                    attempt = 0;
+                    attempt = 0; // Reset attempts on successful connection
                 }
                 Err(e) => {
                     error!("WebSocket connection error: {:#}", e);
                 }
             }
 
-            // Check if we should attempt reconnection
-            if self.config.max_reconnect_attempts > 0 {
-                attempt += 1;
-                if attempt >= self.config.max_reconnect_attempts {
-                    error!(
-                        "Maximum reconnection attempts ({}) reached. Stopping.",
-                        self.config.max_reconnect_attempts
-                    );
-                    break;
-                }
+            // Check if we should retry
+            if self.config.max_reconnect_attempts > 0
+                && attempt >= self.config.max_reconnect_attempts
+            {
+                error!(
+                    "Maximum reconnection attempts ({}) reached. Giving up.",
+                    self.config.max_reconnect_attempts
+                );
+                break;
             }
 
-            // Wait before reconnecting with exponential backoff
-            let backoff_secs = std::cmp::min(
-                self.config.reconnect_interval_secs * (1 << std::cmp::min(attempt, 5)),
-                300, // Max 5 minutes
-            );
-
+            attempt += 1;
+            let delay = self.calculate_backoff(attempt);
             warn!(
                 "Reconnecting in {} seconds (attempt {})...",
-                backoff_secs,
-                attempt + 1
+                delay.as_secs(),
+                attempt
             );
-            sleep(Duration::from_secs(backoff_secs)).await;
+            sleep(delay).await;
         }
     }
 
-    /// Connect to WebSocket server and listen for messages
-    async fn connect_and_listen(&self) -> Result<()> {
-        // Connect to the WebSocket server
+    /// Connect to WebSocket server and receive messages
+    async fn connect_and_receive(&self) -> Result<()> {
         let (ws_stream, _) = connect_async(&self.config.websocket_url)
             .await
             .context("Failed to connect to WebSocket server")?;
 
-        info!("Connected to WebSocket server successfully");
+        info!("WebSocket connection established");
 
-        let (_write, mut read) = ws_stream.split();
+        let (_, mut read) = ws_stream.split();
 
-        // Listen for incoming messages
         while let Some(message) = read.next().await {
             match message {
                 Ok(msg) => {
                     if let Err(e) = self.handle_message(msg).await {
-                        warn!("Error handling message: {:#}", e);
+                        error!("Error handling message: {:#}", e);
                     }
                 }
                 Err(e) => {
@@ -99,39 +91,41 @@ impl WebSocketClient {
         Ok(())
     }
 
-    /// Handle an incoming WebSocket message
+    /// Handle a WebSocket message
     async fn handle_message(&self, message: Message) -> Result<()> {
         match message {
             Message::Text(text) => {
                 debug!("Received text message: {} bytes", text.len());
                 self.message_tx
                     .send(text.into_bytes())
-                    .context("Failed to forward message")?;
+                    .context("Failed to send message to channel")?;
             }
             Message::Binary(data) => {
                 debug!("Received binary message: {} bytes", data.len());
                 self.message_tx
                     .send(data)
-                    .context("Failed to forward message")?;
+                    .context("Failed to send message to channel")?;
             }
-            Message::Ping(_) => {
-                debug!("Received ping");
-                // Pong is automatically sent by tungstenite
-            }
-            Message::Pong(_) => {
-                debug!("Received pong");
-            }
-            Message::Close(frame) => {
-                info!("Received close frame: {:?}", frame);
+            Message::Close(_) => {
+                info!("Received close message from server");
                 return Err(anyhow::anyhow!("Connection closed by server"));
             }
+            Message::Ping(_) | Message::Pong(_) => {
+                debug!("Received ping/pong message");
+            }
             Message::Frame(_) => {
-                // Raw frames are not expected in normal operation
-                debug!("Received raw frame");
+                debug!("Received frame message");
             }
         }
-
         Ok(())
+    }
+
+    /// Calculate exponential backoff delay
+    fn calculate_backoff(&self, attempt: u32) -> Duration {
+        let base_delay = self.config.reconnect_interval_secs;
+        let exponential_delay = base_delay * 2u64.pow(attempt.saturating_sub(1));
+        let capped_delay = exponential_delay.min(300); // Cap at 5 minutes
+        Duration::from_secs(capped_delay)
     }
 }
 
@@ -139,51 +133,58 @@ impl WebSocketClient {
 mod tests {
     use super::*;
 
-    #[tokio::test]
-    async fn test_websocket_client_creation() {
+    #[test]
+    fn test_websocket_client_creation() {
         let config = Arc::new(ProviderConfig::default());
         let (tx, _rx) = mpsc::unbounded_channel();
-        let client = WebSocketClient::new(config.clone(), tx);
-
-        assert_eq!(client.config.websocket_url, config.websocket_url);
+        let client = WebSocketClient::new(config, tx);
+        assert!(client.config.reconnect_interval_secs > 0);
     }
 
-    #[tokio::test]
-    async fn test_handle_text_message() {
+    #[test]
+    fn test_handle_text_message() {
         let config = Arc::new(ProviderConfig::default());
         let (tx, mut rx) = mpsc::unbounded_channel();
         let client = WebSocketClient::new(config, tx);
 
-        let message = Message::Text("Hello, World!".to_string());
-        client.handle_message(message).await.unwrap();
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        runtime.block_on(async {
+            let message = Message::Text("test message".to_string());
+            client.handle_message(message).await.unwrap();
 
-        let received = rx.recv().await.unwrap();
-        assert_eq!(received, b"Hello, World!");
+            let received = rx.recv().await.unwrap();
+            assert_eq!(received, b"test message");
+        });
     }
 
-    #[tokio::test]
-    async fn test_handle_binary_message() {
+    #[test]
+    fn test_handle_binary_message() {
         let config = Arc::new(ProviderConfig::default());
         let (tx, mut rx) = mpsc::unbounded_channel();
         let client = WebSocketClient::new(config, tx);
 
-        let data = vec![1, 2, 3, 4, 5];
-        let message = Message::Binary(data.clone());
-        client.handle_message(message).await.unwrap();
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        runtime.block_on(async {
+            let data = vec![1, 2, 3, 4, 5];
+            let message = Message::Binary(data.clone());
+            client.handle_message(message).await.unwrap();
 
-        let received = rx.recv().await.unwrap();
-        assert_eq!(received, data);
+            let received = rx.recv().await.unwrap();
+            assert_eq!(received, data);
+        });
     }
 
-    #[tokio::test]
-    async fn test_handle_close_message() {
+    #[test]
+    fn test_handle_close_message() {
         let config = Arc::new(ProviderConfig::default());
         let (tx, _rx) = mpsc::unbounded_channel();
         let client = WebSocketClient::new(config, tx);
 
-        let message = Message::Close(None);
-        let result = client.handle_message(message).await;
-
-        assert!(result.is_err());
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        runtime.block_on(async {
+            let message = Message::Close(None);
+            let result = client.handle_message(message).await;
+            assert!(result.is_err());
+        });
     }
 }

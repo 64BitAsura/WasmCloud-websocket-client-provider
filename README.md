@@ -1,146 +1,62 @@
-# WasmCloud WebSocket Provider
+# Custom Capability Provider
 
-A unidirectional WebSocket client provider for WasmCloud that receives messages from remote WebSocket servers and forwards them to components via the NATS mesh.
+This capability provider is a template for creating providers with custom capabilities. It uses the [wasmcloud-provider-sdk](https://crates.io/crates/wasmcloud-provider-sdk) and implements the [Provider](https://docs.rs/wasmcloud-provider-sdk/0.5.0/wasmcloud_provider_sdk/trait.Provider.html) trait with an example handler that will persist the links that target the provider (target links) and links where the provider is the source and targets a component (source links).
 
-## Features
+The purpose of this example is to provide comprehensive comments on the usage of our wasmCloud provider SDK, from serving RPC exports to invoking component imports. The code is informative to read through and provides a base for extending wasmCloud with custom capabilities.
 
-- 🔌 **WebSocket Client**: Connects to remote WebSocket servers (ws:// and wss://)
-- 📨 **Unidirectional**: Receives messages only (reply-back deferred)
-- 🔄 **Auto-Reconnection**: Automatic reconnection with exponential backoff
-- 🚀 **NATS Integration**: Forwards messages to components via NATS
-- 🔒 **TLS Support**: Secure WebSocket connections (wss://)
-- 🧪 **Well Tested**: 13 unit tests covering all core functionality
-- ✅ **wash CLI**: Properly initialized with wasmCloud tooling
+## Building
 
-## Project Structure
+Prerequisites:
 
-This provider was created using the wash CLI and follows wasmCloud best practices:
+1. [Rust toolchain](https://www.rust-lang.org/tools/install)
+1. [wash](https://wasmcloud.com/docs/installation)
 
-```
-wasmcloud-websocket-provider/
-├── src/
-│   ├── main.rs           # Entry point
-│   ├── provider.rs       # Provider implementation
-│   ├── config.rs         # Configuration module
-│   └── websocket.rs      # WebSocket client
-├── wit/
-│   └── world.wit         # WIT interface definitions
-├── component/            # Example test component
-├── wasmcloud.toml        # wasmCloud configuration
-├── Cargo.toml            # Rust dependencies
-└── Makefile              # Development commands
-```
+You can build this capability provider by running `wash build`. You can build the included test component with `wash build -p ./component`.
 
-## Quick Start
+## Running to test
 
-### Prerequisites
+Prerequisites:
 
-- Rust 1.75 or later
-- wash CLI (installed automatically during setup)
-- NATS server (typically included with WasmCloud)
+1. [Rust toolchain](https://www.rust-lang.org/tools/install)
+1. [nats-server](https://github.com/nats-io/nats-server)
+1. [nats-cli](https://github.com/nats-io/natscli)
 
-### Building
+You can run this capability provider as a binary by passing a simple base64 encoded [HostData](https://docs.rs/wasmcloud-core/0.6.0/wasmcloud_core/host/struct.HostData.html) struct, in order to do basic testing. For example:
 
 ```bash
-# Using wash (recommended)
-wash build
-
-# Using Make
-make build          # Development build
-make release        # Release build
-
-# Or using Cargo directly
-cargo build --release
+nats-server -js &
+echo '{"lattice_rpc_url": "0.0.0.0:4222", "lattice_rpc_prefix": "default", "provider_key": "custom-template", "config": {"foo": "bar"}, "env_values": {}, "link_definitions": [], "otel_config": {"enable_observability": false}}' | base64 | cargo run
 ```
 
-### Testing
+And in another terminal, you can request the health of the provider using the NATS CLI
 
 ```bash
-# Using Make
-make test           # Run all tests
-make test-verbose   # Run with output
-
-# Or using Cargo
-cargo test
+nats req "wasmbus.rpc.default.custom-template.health" '{}'
 ```
 
-### Linting & Formatting
+Additionally, you can invoke the provider directly which will send test data to each linked component
 
 ```bash
-# Using Make
-make fmt           # Format code
-make lint          # Run clippy
-make check         # Run both fmt-check and lint
-make all           # Format, lint, test, and build
-
-# Or using Cargo
-cargo fmt
-cargo clippy -- -D warnings
+wash call custom-template wasmcloud:example/system-info.call
 ```
 
-## Configuration
+## Running as an application
 
-The provider accepts configuration via link definitions in WasmCloud:
-
-```json
-{
-  "websocket_url": "wss://example.com/ws",
-  "nats_subject": "websocket.messages",
-  "reconnect_interval_secs": 5,
-  "max_reconnect_attempts": 0,
-  "tls_verification": true
-}
-```
-
-### Configuration Parameters
-
-- `websocket_url` (required): WebSocket server URL
-- `nats_subject` (required): NATS subject for publishing messages
-- `reconnect_interval_secs` (default: 5): Seconds between reconnection attempts
-- `max_reconnect_attempts` (default: 0): Maximum reconnections (0 = infinite)
-- `tls_verification` (default: true): Enable TLS certificate verification
-
-See [examples/configuration.md](./examples/configuration.md) for more examples.
-
-## Architecture
-
-See [Agents.md](./Agents.md) for detailed architecture documentation, implementation guidelines, and development workflow.
-
-## Usage in WasmCloud
-
-1. Build the provider with `wash build`
-2. Deploy to your WasmCloud lattice
-3. Link it to a component that needs to receive WebSocket messages
-4. Messages will be forwarded to the configured NATS subject
-
-## Documentation
-
-- **README.md**: This file - Quick start and overview
-- **Agents.md**: Living documentation with architecture and workflows
-- **WASH_CLI.md**: wash CLI installation and usage guide
-- **examples/configuration.md**: Configuration examples and patterns
-- **SUMMARY.md**: Complete project status and metrics
-
-## Development
+You can deploy this provider, along with a [component](./component/) for testing, by deploying the [wadm.yaml](./wadm.yaml) application. Make sure to build the component with `wash build`.
 
 ```bash
-# See all available commands
-make help
-
-# Run the full CI pipeline locally
-make ci
-
-# Watch mode (requires cargo-watch)
-make watch
+# Launch wasmCloud in the background
+wash up -d
+# Deploy the application
+wash app deploy ./wadm.yaml
 ```
 
-## License
+## Customizing
 
-Apache-2.0 - See [LICENSE](./LICENSE) for details
+Customizing this provider to meet your needs of a custom capability takes just a few steps.
 
-## Status
+1. Update the [wit/world.wit](./wit/world.wit) to include the data types and functions that model your custom capability. You can use the example as a base and the [component model WIT reference](https://component-model.bytecodealliance.org/design/wit.html) as a guide for types and keywords.
+1. Implement any provider `export`s in [src/provider.rs](./src/provider.rs) inside of the `impl Handler {}` block.
+1. Use the methods inside of the `impl Provider {}` block to handle invoking components. For inspiration, take a look at our other capability providers that implement various capabilities like HTTP, Messaging, Key-Value in the [crates/provider-\*](../../../../crates/) folder.
 
-✅ **Phases 1-5 Complete**: Core implementation, testing, CI/CD, documentation, wash CLI integration
-📋 **Next**: Integration tests and deployment testing in wasmCloud lattice
-
-For detailed status, see [SUMMARY.md](./SUMMARY.md)
+Have any questions? Please feel free to [file an issue](https://github.com/wasmCloud/wasmCloud/issues/new/choose) and/or join us on the [wasmCloud slack](https://slack.wasmcloud.com)!
