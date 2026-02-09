@@ -8,15 +8,17 @@ This provider implements a **unidirectional WebSocket client** for WasmCloud tha
 - Forwards received messages to WasmCloud components via NATS mesh
 - Does NOT support reply-back functionality (deferred feature)
 
-## Important: Wash CLI Requirement
+## Project Initialization with wash CLI ✅
 
-**This project should be initialized using the `wash` CLI tool**, which is the official wasmCloud tooling for scaffolding providers. While the current implementation was created with `cargo init` due to environment constraints, **production implementations should use wash**.
+**This project has been properly initialized using the `wash` CLI tool.** The project structure follows wasmCloud best practices with:
 
-See [WASH_CLI.md](./WASH_CLI.md) for detailed instructions on:
-- Installing wash CLI
-- Creating a provider with proper scaffolding
-- Building and deploying providers
-- Re-initializing this project with wash when available
+- Proper provider scaffolding from wasmCloud templates
+- WIT interface definitions in `wit/` directory
+- wasmcloud.toml configuration
+- wash build integration
+- Component examples in `component/` directory
+
+See [WASH_CLI.md](./WASH_CLI.md) for detailed information about wash CLI usage.
 
 ## Architecture
 
@@ -223,15 +225,17 @@ The GitHub Actions pipeline should:
 - Configuration module with validation
 - WebSocket client with auto-reconnection
 - NATS message forwarding
-- Comprehensive unit tests (15 tests passing)
+- Comprehensive unit tests (13 tests passing)
 - CI/CD pipeline (GitHub Actions)
 - Code formatting and linting setup
+- **wash CLI initialization and proper project structure** ✅
+- WIT interface definitions
+- wasmcloud.toml configuration
 
 ### Pending
-- **Re-initialize with wash CLI** (when available)
 - Integration tests with actual WebSocket server
 - Deployment testing in wasmCloud lattice
-- Provider archive (PAR) creation
+- Provider archive (PAR) creation with wash
 - Example component for integration testing
 - Performance benchmarks
 

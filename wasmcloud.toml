@@ -1,0 +1,9 @@
+name = "WebSocket Provider"
+language = "rust"
+type = "provider"
+
+[build]
+command = "cargo build --release"
+
+[provider]
+vendor = "64BitAsura"

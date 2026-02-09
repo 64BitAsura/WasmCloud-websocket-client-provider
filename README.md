@@ -9,34 +9,47 @@ A unidirectional WebSocket client provider for WasmCloud that receives messages 
 - 🔄 **Auto-Reconnection**: Automatic reconnection with exponential backoff
 - 🚀 **NATS Integration**: Forwards messages to components via NATS
 - 🔒 **TLS Support**: Secure WebSocket connections (wss://)
-- 🧪 **Well Tested**: Unit and integration tests with deployment testing
+- 🧪 **Well Tested**: 13 unit tests covering all core functionality
+- ✅ **wash CLI**: Properly initialized with wasmCloud tooling
 
-## Important Note on wash CLI
+## Project Structure
 
-**This project should ideally be initialized using the `wash` CLI**, which is the official wasmCloud tooling. Due to environment constraints during initial development, this implementation was created with `cargo init`. For production use and proper wasmCloud integration, please refer to [WASH_CLI.md](./WASH_CLI.md) for:
+This provider was created using the wash CLI and follows wasmCloud best practices:
 
-- Installing wash CLI
-- Re-initializing this project with proper scaffolding
-- Best practices for wasmCloud provider development
+```
+wasmcloud-websocket-provider/
+├── src/
+│   ├── main.rs           # Entry point
+│   ├── provider.rs       # Provider implementation
+│   ├── config.rs         # Configuration module
+│   └── websocket.rs      # WebSocket client
+├── wit/
+│   └── world.wit         # WIT interface definitions
+├── component/            # Example test component
+├── wasmcloud.toml        # wasmCloud configuration
+├── Cargo.toml            # Rust dependencies
+└── Makefile              # Development commands
+```
 
 ## Quick Start
 
 ### Prerequisites
 
 - Rust 1.75 or later
-- WasmCloud runtime (optional, for deployment)
+- wash CLI (installed automatically during setup)
 - NATS server (typically included with WasmCloud)
-- wash CLI (recommended, see [WASH_CLI.md](./WASH_CLI.md))
 
 ### Building
 
 ```bash
-# Using Make (recommended)
+# Using wash (recommended)
+wash build
+
+# Using Make
 make build          # Development build
 make release        # Release build
 
 # Or using Cargo directly
-cargo build
 cargo build --release
 ```
 
@@ -49,7 +62,6 @@ make test-verbose   # Run with output
 
 # Or using Cargo
 cargo test
-cargo test -- --nocapture
 ```
 
 ### Linting & Formatting
@@ -64,16 +76,6 @@ make all           # Format, lint, test, and build
 # Or using Cargo
 cargo fmt
 cargo clippy -- -D warnings
-```
-
-### Development
-
-```bash
-# See all available commands
-make help
-
-# Run the full CI pipeline locally
-make ci
 ```
 
 ## Configuration
@@ -98,26 +100,47 @@ The provider accepts configuration via link definitions in WasmCloud:
 - `max_reconnect_attempts` (default: 0): Maximum reconnections (0 = infinite)
 - `tls_verification` (default: true): Enable TLS certificate verification
 
+See [examples/configuration.md](./examples/configuration.md) for more examples.
+
 ## Architecture
 
 See [Agents.md](./Agents.md) for detailed architecture documentation, implementation guidelines, and development workflow.
 
 ## Usage in WasmCloud
 
-1. Build the provider
+1. Build the provider with `wash build`
 2. Deploy to your WasmCloud lattice
 3. Link it to a component that needs to receive WebSocket messages
 4. Messages will be forwarded to the configured NATS subject
 
+## Documentation
+
+- **README.md**: This file - Quick start and overview
+- **Agents.md**: Living documentation with architecture and workflows
+- **WASH_CLI.md**: wash CLI installation and usage guide
+- **examples/configuration.md**: Configuration examples and patterns
+- **SUMMARY.md**: Complete project status and metrics
+
 ## Development
 
-See [Agents.md](./Agents.md) for:
-- Architecture overview
-- Implementation guidelines
-- Testing strategy
-- Development workflow
-- Contributing guidelines
+```bash
+# See all available commands
+make help
+
+# Run the full CI pipeline locally
+make ci
+
+# Watch mode (requires cargo-watch)
+make watch
+```
 
 ## License
 
 Apache-2.0 - See [LICENSE](./LICENSE) for details
+
+## Status
+
+✅ **Phases 1-5 Complete**: Core implementation, testing, CI/CD, documentation, wash CLI integration
+📋 **Next**: Integration tests and deployment testing in wasmCloud lattice
+
+For detailed status, see [SUMMARY.md](./SUMMARY.md)
