@@ -1,287 +1,128 @@
-# WebSocket Provider Test Demonstration
-
-This document provides a step-by-step guide to manually test the WebSocket provider with a wasmCloud NATS mesh.
+# WebSocket Provider Testing
 
 ## Quick Test (Automated)
-
-For a fully automated test, run:
 
 ```bash
 ./tests/run_integration_test.sh
 ```
 
-This will automatically:
-1. Start a test WebSocket server
-2. Build and deploy the provider and component
-3. Create the necessary links
-4. Monitor message flow for 30 seconds
-5. Report results and clean up
+This will automatically start a test WebSocket server, build and deploy the provider and component, create links, monitor message flow for 30 seconds, and report results.
 
 ## Manual Test Steps
 
-If you prefer to test manually or troubleshoot issues, follow these steps:
-
-### Step 1: Install Prerequisites
+### Prerequisites
 
 ```bash
-# Install Python websockets library
 pip3 install websockets
 ```
 
-### Step 2: Start the Test WebSocket Server
+### Step 1: Start the Test WebSocket Server
 
-In Terminal 1:
 ```bash
 python3 tests/websocket_server.py
 ```
 
-You should see:
-```
-Starting WebSocket test server on ws://127.0.0.1:8765
-Press Ctrl+C to stop
---------------------------------------------------
-```
+Server listens on `ws://127.0.0.1:8765`, sends JSON messages every 3 seconds, and binary messages every 5th message.
 
-### Step 3: Build the Provider
-
-In Terminal 2:
-```bash
-cargo build --release
-```
-
-Wait for the build to complete. The provider binary will be at:
-`./target/release/wasmcloud-provider-websocket`
-
-### Step 4: Build the Component
+### Step 2: Build Provider and Component
 
 ```bash
-cd component
 wash build
-cd ..
+wash build -p ./component
 ```
 
-The component will be built to:
-`./component/build/custom_component.wasm`
+The provider archive will be in `build/` (`.par.gz`), the component in `component/build/` (`.wasm`).
 
-### Step 5: Start wasmCloud Host
+### Step 3: Start wasmCloud Host
 
-In Terminal 3:
 ```bash
 wash up
 ```
 
-This starts:
-- A NATS server
-- A wasmCloud host
-- Web UI at http://localhost:4000
+Wait until `wash get hosts` shows a host ID.
 
-### Step 6: Deploy the Provider
+### Step 4: Deploy Provider and Component
 
-In Terminal 4:
 ```bash
-wash start provider \
-  file://./target/release/wasmcloud-provider-websocket \
-  websocket-provider
+wash start provider file://./build/wasmcloud-provider-websocket.par.gz websocket-provider
+wash start component file://./component/build/custom_template_test_component.wasm test-component
 ```
 
-### Step 7: Deploy the Component
+Verify both are running:
 
 ```bash
-wash start component \
-  file://./component/build/custom_component.wasm \
-  test-component
+wash get inventory
 ```
 
-### Step 8: Create the Link
-
-This links the component to the provider with WebSocket configuration:
+### Step 5: Create Config and Link
 
 ```bash
+# Create named config
+wash config put websocket-config \
+  websocket_url=ws://127.0.0.1:8765 \
+  max_reconnect_attempts=0 \
+  initial_reconnect_delay_ms=1000
+
+# Link component to provider
 wash link put test-component websocket-provider \
-  wasmcloud:websocket \
-  websocket_url=ws://127.0.0.1:8765
+  wasmcloud websocket \
+  --interface message-handler \
+  --target-config websocket-config
 ```
 
-### Step 9: Monitor the System
+### Step 6: Verify
 
-#### View All Logs
+Check the wasmCloud host output for:
+
+- `WebSocket connection established: 101`
+- `Received text message: ... bytes`
+- `Message successfully sent to component ...`
+
+The WebSocket server terminal should show client connections and sent messages.
+
+## Using WADM
+
+You can also deploy the full application declaratively:
+
 ```bash
-wash logs
+wash up -d
+wash app deploy ./wadm.yaml
 ```
-
-#### View Provider Logs Only
-```bash
-wash logs websocket-provider
-```
-
-#### View Component Logs Only
-```bash
-wash logs test-component
-```
-
-### Expected Output
-
-**Terminal 1 (WebSocket Server):**
-```
-Client 140123456789 connected from ('127.0.0.1', 54321)
-Sent to client 140123456789: {"type": "test", "count": 1, ...}
-Sent to client 140123456789: {"type": "test", "count": 2, ...}
-```
-
-**Provider Logs:**
-```
-WebSocket connection established: 101
-Received text message: 123 bytes
-Message successfully sent to component test-component
-```
-
-**Component Logs:**
-```
-Received WebSocket message - Type: text, Size: 123 bytes, Timestamp: 1707598234
-Message payload: {"type":"test","count":1,...}
-```
-
-## Verification Checklist
-
-- [ ] WebSocket server shows client connected
-- [ ] Provider logs show "WebSocket connection established"
-- [ ] Provider logs show "Received text/binary message"
-- [ ] Provider logs show "Message successfully sent to component"
-- [ ] Component logs show "Received WebSocket message"
-- [ ] Component logs show message details and payload
 
 ## Testing Edge Cases
 
-### Test Reconnection
+### Reconnection
 
-1. In the WebSocket server terminal, press Ctrl+C to stop the server
-2. Observe in provider logs:
-   ```
-   WebSocket connection error: ...
-   Attempting reconnection #1 after 1s
-   ```
-3. Restart the server: `python3 tests/websocket_server.py`
-4. Observe successful reconnection in provider logs
+1. Stop the WebSocket server (Ctrl+C)
+2. Observe reconnection attempts in provider logs
+3. Restart the server — provider reconnects automatically
 
-### Test with Different WebSocket URLs
+### Message Size Limits
 
-Update the link with a different URL:
-
-```bash
-# Delete old link
-wash link del test-component websocket-provider wasmcloud:websocket
-
-# Create new link with different URL
-wash link put test-component websocket-provider \
-  wasmcloud:websocket \
-  websocket_url=wss://echo.websocket.org
-```
-
-### Test Message Size Limits
-
-Configure a small message size limit:
-
-```bash
-wash link put test-component websocket-provider \
-  wasmcloud:websocket \
-  websocket_url=ws://127.0.0.1:8765 \
-  max_message_size=100
-```
-
-Messages larger than 100 bytes will be skipped by the provider.
+Set `max_message_size` in the config to enforce size limits. Messages exceeding the limit are skipped.
 
 ## Cleanup
 
 ```bash
-# Stop everything
 wash down
-
-# Stop WebSocket server (Ctrl+C in Terminal 1)
 ```
 
 ## Troubleshooting
 
-### "Failed to connect to WebSocket server"
+| Problem | Check |
+|---------|-------|
+| Provider not connecting | Is the WebSocket server running? Check `websocket_url` in config |
+| Component not receiving messages | Run `wash link query` and `wash get inventory` |
+| NATS connection issues | Run `wash get hosts`, try `wash down && wash up` |
 
-**Check:**
-- Is the WebSocket server running?
-- Is it listening on the correct address?
-- Check firewall settings
-
-**Debug:**
-```bash
-# Test connection with curl
-curl -i -N -H "Connection: Upgrade" \
-  -H "Upgrade: websocket" \
-  -H "Sec-WebSocket-Key: test" \
-  -H "Sec-WebSocket-Version: 13" \
-  http://127.0.0.1:8765/
-```
-
-### "Component not receiving messages"
-
-**Check:**
-- Is the link created? `wash link query`
-- Are provider and component running? `wash get inventory`
-- Check component logs for errors
-
-**Debug:**
-```bash
-# Check link status
-wash link query
-
-# Check provider status  
-wash get providers
-
-# Check component status
-wash get components
-```
-
-### "NATS connection failed"
-
-**Check:**
-- Is wash up running?
-- Is NATS server started?
-
-**Debug:**
-```bash
-# Check hosts
-wash get hosts
-
-# Restart wasmCloud
-wash down
-wash up
-```
-
-## Architecture Diagram
+## Architecture
 
 ```
-┌─────────────────────┐
-│  WebSocket Server   │
-│  (127.0.0.1:8765)   │
-└──────────┬──────────┘
-           │ WebSocket
-           │ messages
-           ▼
-┌─────────────────────┐
-│  WebSocket Provider │
-│  (Rust + tokio)     │
-└──────────┬──────────┘
-           │ wRPC calls
-           │ (via NATS)
-           ▼
-┌─────────────────────┐
-│ wasmCloud Component │
-│ (WebAssembly)       │
-└─────────────────────┘
+WebSocket Server (127.0.0.1:8765)
+    │ WebSocket messages
+    ▼
+WebSocket Provider (Rust + tokio)
+    │ wRPC calls (via NATS)
+    ▼
+wasmCloud Component (WebAssembly)
 ```
-
-## Next Steps
-
-After successful testing, you can:
-
-1. **Deploy to Production**: Use WADM manifests for deployment
-2. **Connect to Real Services**: Update the `websocket_url` configuration
-3. **Add Business Logic**: Enhance the component to process messages
-4. **Monitor with Observability**: Enable OpenTelemetry for tracing
-5. **Scale Horizontally**: Deploy multiple instances across hosts
