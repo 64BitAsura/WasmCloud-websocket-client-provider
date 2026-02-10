@@ -1,0 +1,65 @@
+[package]
+name = "websocket-provider"
+version = "0.1.0"
+edition = "2021"
+authors = ["WasmCloud Community"]
+description = "A wasmcloud capability provider for unidirectional WebSocket client functionality"
+license = "Apache-2.0"
+repository = "https://github.com/64BitAsura/WasmCloud-websocket-provider-attempt2"
+
+[dependencies]
+# wasmcloud provider SDK
+wasmcloud-provider-sdk = "0.8"
+
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+tokio-tungstenite = "0.24"
+
+# WebSocket
+tungstenite = "0.24"
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Error handling
+anyhow = "1"
+thiserror = "1"
+
+# NATS
+async-nats = "0.33"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# URL parsing
+url = "2"
+
+# Base64 encoding
+base64 = "0.22"
+
+# Futures utilities
+futures-util = "0.3"
+
+[dev-dependencies]
+# Testing utilities
+tokio-test = "0.4"
+mockito = "1"
+wiremock = "0.6"
+async-trait = "0.1"
+
+[lib]
+name = "websocket_provider"
+path = "src/lib.rs"
+crate-type = ["cdylib", "rlib"]
+
+[[bin]]
+name = "websocket-provider"
+path = "src/main.rs"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true
