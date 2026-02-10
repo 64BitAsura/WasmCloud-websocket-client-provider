@@ -87,13 +87,19 @@ echo ""
 # Build the component
 echo -e "${YELLOW}Building component...${NC}"
 cd component
-wash build 2>&1 | grep -E "(Building|Finished|error)" || true
+cargo build --release --target wasm32-wasip2 2>&1 | grep -E "(Compiling|Finished|error)" || true
 cd ..
 
-if [ ! -f "component/build/custom_component.wasm" ]; then
+# Check if component was built
+COMPONENT_PATH="component/target/wasm32-wasip2/release/custom_template_test_component.wasm"
+if [ ! -f "$COMPONENT_PATH" ]; then
     echo -e "${RED}Error: Component build failed${NC}"
     exit 1
 fi
+
+# Create build directory and copy component
+mkdir -p component/build
+cp "$COMPONENT_PATH" component/build/custom_component.wasm
 
 echo -e "${GREEN}✓ Component built${NC}"
 echo ""
