@@ -48,6 +48,9 @@ cleanup() {
     
     # Stop wasmCloud
     wash down 2>/dev/null || true
+    if [ ! -z "$WASH_PID" ]; then
+        kill $WASH_PID 2>/dev/null || true
+    fi
     echo "✓ Stopped wasmCloud"
     
     echo -e "${GREEN}Cleanup complete${NC}"
@@ -74,44 +77,44 @@ echo ""
 
 # Build the provider
 echo -e "${YELLOW}Building provider...${NC}"
-cargo build --release 2>&1 | grep -E "(Compiling|Finished|error)" || true
+wash build 2>&1 | grep -E "(Compiling|Finished|error|Built)" || true
 
-if [ ! -f "target/release/wasmcloud-provider-websocket" ]; then
-    echo -e "${RED}Error: Provider build failed${NC}"
+# Find the built provider archive
+PROVIDER_PATH=$(find build -name "*.par.gz" 2>/dev/null | head -1)
+if [ -z "$PROVIDER_PATH" ]; then
+    echo -e "${RED}Error: Provider build failed - no .par.gz file found${NC}"
     exit 1
 fi
 
-echo -e "${GREEN}✓ Provider built${NC}"
+echo -e "${GREEN}✓ Provider built: $PROVIDER_PATH${NC}"
 echo ""
 
 # Build the component
 echo -e "${YELLOW}Building component...${NC}"
-cd component
-cargo build --release --target wasm32-wasip2 2>&1 | grep -E "(Compiling|Finished|error)" || true
-cd ..
+wash build -p ./component 2>&1 | grep -E "(Compiling|Finished|error|Built)" || true
 
-# Check if component was built
-COMPONENT_PATH="component/target/wasm32-wasip2/release/custom_template_test_component.wasm"
-if [ ! -f "$COMPONENT_PATH" ]; then
+# Find the built component
+COMPONENT_PATH=$(find component/build -name "*.wasm" 2>/dev/null | head -1)
+if [ -z "$COMPONENT_PATH" ]; then
     echo -e "${RED}Error: Component build failed${NC}"
     exit 1
 fi
 
-# Create build directory and copy component
-mkdir -p component/build
-cp "$COMPONENT_PATH" component/build/custom_component.wasm
-
-echo -e "${GREEN}✓ Component built${NC}"
+echo -e "${GREEN}✓ Component built: $COMPONENT_PATH${NC}"
 echo ""
 
 # Start wasmCloud
 echo -e "${YELLOW}Starting wasmCloud host...${NC}"
-wash up --detached
+
+# Run wash up in the background, capturing logs to a file
+WASMCLOUD_LOG="/tmp/wasmcloud_host.log"
+wash up > "$WASMCLOUD_LOG" 2>&1 &
+WASH_PID=$!
 
 # Wait for host to be ready
 echo "Waiting for host to be ready..."
 for i in {1..30}; do
-    if wash get hosts 2>/dev/null | grep -q "wasmCloud Host"; then
+    if wash get hosts 2>/dev/null | grep -qE "^  [A-Z0-9]{56}"; then
         break
     fi
     sleep 1
@@ -122,25 +125,49 @@ echo ""
 
 # Deploy provider
 echo -e "${YELLOW}Deploying provider...${NC}"
-wash start provider file://./target/release/wasmcloud-provider-websocket websocket-provider
-sleep 2
-echo -e "${GREEN}✓ Provider deployed${NC}"
+# wash start may return timeout error even when provider starts successfully, so don't fail on it
+wash start provider "file://./$PROVIDER_PATH" websocket-provider --timeout-ms 30000 2>&1 || true
+sleep 5
+
+# Verify provider is actually running
+if wash get inventory 2>&1 | grep -q "websocket-provider"; then
+    echo -e "${GREEN}✓ Provider deployed and running${NC}"
+else
+    echo -e "${RED}Error: Provider failed to start${NC}"
+    wash get inventory 2>&1
+    exit 1
+fi
 echo ""
 
 # Deploy component
 echo -e "${YELLOW}Deploying component...${NC}"
-wash start component file://./component/build/custom_component.wasm test-component
-sleep 2
-echo -e "${GREEN}✓ Component deployed${NC}"
+wash start component "file://./$COMPONENT_PATH" test-component --timeout-ms 30000 2>&1 || true
+sleep 3
+
+# Verify component is running
+if wash get inventory 2>&1 | grep -q "test-component"; then
+    echo -e "${GREEN}✓ Component deployed and running${NC}"
+else
+    echo -e "${RED}Error: Component failed to start${NC}"
+    wash get inventory 2>&1
+    exit 1
+fi
 echo ""
 
 # Create link
 echo -e "${YELLOW}Creating link between component and provider...${NC}"
-wash link put test-component websocket-provider \
-  wasmcloud:websocket \
+
+# First, create the named config with the WebSocket connection settings
+wash config put websocket-config \
   websocket_url=ws://127.0.0.1:8765 \
   max_reconnect_attempts=0 \
   initial_reconnect_delay_ms=1000
+
+# Then create the link referencing that config
+wash link put test-component websocket-provider \
+  wasmcloud websocket \
+  --interface message-handler \
+  --target-config websocket-config
 
 sleep 2
 echo -e "${GREEN}✓ Link created${NC}"
@@ -148,15 +175,11 @@ echo ""
 
 # Monitor logs
 echo -e "${GREEN}=== Test Running ===${NC}"
-echo "Monitoring logs for 30 seconds..."
+echo "Monitoring host logs for 30 seconds..."
 echo "Press Ctrl+C to stop early"
 echo ""
 
-# Start log monitoring in background
-wash logs > /tmp/wasmcloud_logs.log 2>&1 &
-LOG_PID=$!
-
-# Wait and show progress
+# Wait and show progress, checking logs from the host output
 for i in {1..30}; do
     echo -ne "\rTime: ${i}s / 30s  "
     sleep 1
@@ -165,16 +188,13 @@ done
 echo ""
 echo ""
 
-# Stop log monitoring
-kill $LOG_PID 2>/dev/null || true
-
-# Analyze logs
+# Analyze logs from the wasmCloud host output
 echo -e "${GREEN}=== Test Results ===${NC}"
 echo ""
 
-PROVIDER_CONNECTED=$(grep -c "WebSocket connection established" /tmp/wasmcloud_logs.log || echo "0")
-MESSAGES_RECEIVED=$(grep -c "Received WebSocket message" /tmp/wasmcloud_logs.log || echo "0")
-MESSAGES_SENT=$(grep -c "Message successfully sent to component" /tmp/wasmcloud_logs.log || echo "0")
+PROVIDER_CONNECTED=$(grep -c "WebSocket connection established" "$WASMCLOUD_LOG" 2>/dev/null || echo "0")
+MESSAGES_RECEIVED=$(grep -c "Received WebSocket message" "$WASMCLOUD_LOG" 2>/dev/null || echo "0")
+MESSAGES_SENT=$(grep -c "Message successfully sent to component" "$WASMCLOUD_LOG" 2>/dev/null || echo "0")
 
 echo "Provider connections: $PROVIDER_CONNECTED"
 echo "Messages received by provider: $MESSAGES_SENT"
@@ -193,7 +213,7 @@ if [ "$PROVIDER_CONNECTED" -gt "0" ] && [ "$MESSAGES_RECEIVED" -gt "0" ]; then
 else
     echo -e "${RED}✗ Integration test FAILED${NC}"
     echo ""
-    echo "Last 50 lines of logs:"
-    tail -50 /tmp/wasmcloud_logs.log
+    echo "Last 50 lines of host logs:"
+    tail -50 "$WASMCLOUD_LOG" 2>/dev/null || echo "(no logs available)"
     exit 1
 fi

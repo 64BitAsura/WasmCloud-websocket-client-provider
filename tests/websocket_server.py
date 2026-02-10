@@ -17,10 +17,11 @@ except ImportError:
     sys.exit(1)
 
 
-async def send_messages(websocket, path):
+async def send_messages(websocket):
     """Send test messages to connected clients."""
     client_id = id(websocket)
-    print(f"Client {client_id} connected from {websocket.remote_address}")
+    remote = getattr(websocket, 'remote_address', None)
+    print(f"Client {client_id} connected from {remote}")
     
     message_count = 0
     try:
