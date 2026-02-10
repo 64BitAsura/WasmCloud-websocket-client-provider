@@ -1,20 +1,38 @@
 wit_bindgen::generate!({ generate_all });
 
-use crate::exports::wasmcloud::example::process_data::Data;
-use crate::exports::wasmcloud::example::process_data::Guest;
+use crate::exports::wasmcloud::websocket::message_handler::{Guest, WebsocketMessage};
 use crate::wasi::logging::logging::*;
-use crate::wasmcloud::example::system_info::Kind;
 
-struct CustomTemplateComponent;
+struct WebSocketComponent;
 
-impl Guest for CustomTemplateComponent {
-    fn process(data: Data) -> String {
-        log(Level::Info, "", &format!("Data received: {:?}", data));
-        // Request OS and architecture information
-        let os = crate::wasmcloud::example::system_info::request_info(Kind::Os);
-        let arch = crate::wasmcloud::example::system_info::request_info(Kind::Arch);
-        format!("Provider is running on {os}-{arch}").to_string()
+impl Guest for WebSocketComponent {
+    fn handle_message(message: WebsocketMessage) -> Result<(), String> {
+        // Log the received message
+        log(
+            Level::Info,
+            "",
+            &format!(
+                "Received WebSocket message - Type: {}, Size: {} bytes, Timestamp: {}",
+                message.message_type, message.size, message.timestamp
+            ),
+        );
+
+        // Log the payload (truncated if too long)
+        let payload_preview = if message.payload.len() > 100 {
+            format!("{}...", &message.payload[..100])
+        } else {
+            message.payload.clone()
+        };
+
+        log(
+            Level::Info,
+            "",
+            &format!("Message payload: {}", payload_preview),
+        );
+
+        // Successfully handled the message
+        Ok(())
     }
 }
 
-export!(CustomTemplateComponent);
+export!(WebSocketComponent);
