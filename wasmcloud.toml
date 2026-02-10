@@ -1,0 +1,6 @@
+name = "WebSocket Provider"
+language = "rust"
+type = "provider"
+
+[provider]
+vendor = "wasmCloud"

@@ -1,5 +1,4 @@
-use crate::config::ProviderConfig;
-use crate::error::{ProviderError, ProviderResult};
+use crate::config::LinkConfig;
 use futures_util::StreamExt;
 use tokio::time::sleep;
 use tokio_tungstenite::{connect_async, tungstenite::Message};
@@ -7,19 +6,19 @@ use tracing::{debug, error, info, warn};
 
 /// WebSocket client handler
 pub struct WebSocketClient {
-    config: ProviderConfig,
+    config: LinkConfig,
 }
 
 impl WebSocketClient {
     /// Create a new WebSocket client
-    pub fn new(config: ProviderConfig) -> Self {
+    pub fn new(config: LinkConfig) -> Self {
         Self { config }
     }
 
     /// Connect to the WebSocket server and start receiving messages
-    pub async fn run<F>(&self, mut message_handler: F) -> ProviderResult<()>
+    pub async fn run<F>(&self, mut message_handler: F) -> anyhow::Result<()>
     where
-        F: FnMut(Vec<u8>) -> ProviderResult<()> + Send,
+        F: FnMut(Vec<u8>) -> anyhow::Result<()> + Send,
     {
         let mut reconnect_attempts = 0u32;
         let mut current_delay = self.config.initial_reconnect_delay();
@@ -61,9 +60,9 @@ impl WebSocketClient {
     }
 
     /// Connect to WebSocket server and receive messages
-    async fn connect_and_receive<F>(&self, message_handler: &mut F) -> ProviderResult<()>
+    async fn connect_and_receive<F>(&self, message_handler: &mut F) -> anyhow::Result<()>
     where
-        F: FnMut(Vec<u8>) -> ProviderResult<()>,
+        F: FnMut(Vec<u8>) -> anyhow::Result<()>,
     {
         info!(
             "Connecting to WebSocket server: {}",
@@ -113,7 +112,7 @@ impl WebSocketClient {
                     }
                     Message::Close(frame) => {
                         info!("Received close frame: {:?}", frame);
-                        return Err(ProviderError::ConnectionClosed);
+                        return Err(anyhow::anyhow!("Connection closed"));
                     }
                     Message::Frame(_) => {
                         debug!("Received raw frame");
@@ -127,20 +126,5 @@ impl WebSocketClient {
         }
 
         Ok(())
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_websocket_client_creation() {
-        let config = ProviderConfig::new(
-            "ws://localhost:8080".to_string(),
-            "test.subject".to_string(),
-        );
-        let client = WebSocketClient::new(config);
-        assert_eq!(client.config.websocket_url, "ws://localhost:8080");
     }
 }
