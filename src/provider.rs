@@ -85,10 +85,7 @@ impl Provider for WebSocketProvider {
             source_id, config, ..
         }: SdkLinkConfig<'_>,
     ) -> anyhow::Result<()> {
-        info!(
-            "Received link configuration from component: {}",
-            source_id
-        );
+        info!("Received link configuration from component: {}", source_id);
 
         // Parse link configuration
         let link_config = LinkConfig::from_values(config)?;
