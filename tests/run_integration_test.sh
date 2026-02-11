@@ -94,7 +94,7 @@ echo -e "${YELLOW}Building component...${NC}"
 wash build -p ./component 2>&1 | grep -E "(Compiling|Finished|error|Built)" || true
 
 # Find the built component
-COMPONENT_PATH=$(find component/build -name "*.wasm" 2>/dev/null | head -1)
+COMPONENT_PATH=$(find component/target -name "*_s.wasm" 2>/dev/null | head -1)
 if [ -z "$COMPONENT_PATH" ]; then
     echo -e "${RED}Error: Component build failed${NC}"
     exit 1
