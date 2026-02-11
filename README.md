@@ -31,6 +31,14 @@ wash app deploy ./wadm.yaml
 
 See [TESTING.md](./TESTING.md) for detailed manual testing steps.
 
+## Development
+
+For contributing to this project, see [Agents.md](./Agents.md) for the structured implementation process including:
+- Analysis of implementation prompts
+- Three-solution approach with confidence ratings
+- Comprehensive testing checklist (format, clippy, type checks)
+- Documentation templates for future reference
+
 ## Configuration
 
 Link configuration values passed via `wash config put`:
