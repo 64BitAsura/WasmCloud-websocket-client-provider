@@ -48,7 +48,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
 
       - name: Install wash CLI
-        uses: wasmcloud/common-actions/install-wash@main
+        run: curl -s "https://packagecloud.io/install/repositories/wasmcloud/core/script.deb.sh" | sudo bash && sudo apt install wash
 
       - name: Build provider
         run: wash build
@@ -83,7 +83,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
 
       - name: Install wash CLI
-        uses: wasmcloud/common-actions/install-wash@main
+        run: curl -s "https://packagecloud.io/install/repositories/wasmcloud/core/script.deb.sh" | sudo bash && sudo apt install wash
 
       - name: Install Python websockets
         run: pip3 install websockets
