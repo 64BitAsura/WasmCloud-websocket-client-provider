@@ -215,7 +215,7 @@ async fn send_message_to_component(
         }
         Err(e) => {
             error!("Failed to call component {}: {}", component_id, e);
-            Err(e.into())
+            Err(e)
         }
     }
 }
