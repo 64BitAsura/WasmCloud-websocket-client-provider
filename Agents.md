@@ -700,5 +700,5 @@ No migration needed. Existing deployments will use the 10-second default timeout
 **References:**
 - [Tokio timeout documentation](https://docs.rs/tokio/latest/tokio/time/fn.timeout.html)
 - [RFC 6455 WebSocket Protocol](https://tools.ietf.org/html/rfc6455)
-- [Link to related issue #XXX] (replace with actual issue number)
-- [Link to related PR #XXX] (replace with actual PR number)
+- Issue #N (replace with actual issue number)
+- PR #N (replace with actual PR number)
