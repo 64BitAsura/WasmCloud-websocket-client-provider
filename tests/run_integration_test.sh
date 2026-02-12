@@ -165,8 +165,8 @@ wash config put websocket-config \
 
 # Then create the link referencing that config
 wash link put test-component websocket-provider \
-  wasmcloud websocket \
-  --interface message-handler \
+  wasmcloud messaging \
+  --interface handler \
   --target-config websocket-config
 
 sleep 2
@@ -193,7 +193,7 @@ echo -e "${GREEN}=== Test Results ===${NC}"
 echo ""
 
 PROVIDER_CONNECTED=$(grep -c "WebSocket connection established" "$WASMCLOUD_LOG" 2>/dev/null || echo "0")
-MESSAGES_RECEIVED=$(grep -c "Received WebSocket message" "$WASMCLOUD_LOG" 2>/dev/null || echo "0")
+MESSAGES_RECEIVED=$(grep -c "Received message" "$WASMCLOUD_LOG" 2>/dev/null || echo "0")
 MESSAGES_SENT=$(grep -c "Message successfully sent to component" "$WASMCLOUD_LOG" 2>/dev/null || echo "0")
 
 echo "Provider connections: $PROVIDER_CONNECTED"

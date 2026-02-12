@@ -22,7 +22,7 @@ spec:
         image: file://./build/wasmcloud-provider-websocket.par.gz
         id: websocket-provider
       traits:
-        # Link the provider to the component on wasmcloud:websocket/message-handler
+        # Link the provider to the component on wasmcloud:messaging/handler
         - type: link
           properties:
             target:
@@ -34,5 +34,5 @@ spec:
                     max_reconnect_attempts: "0"
                     initial_reconnect_delay_ms: "1000"
             namespace: wasmcloud
-            package: websocket
-            interfaces: [message-handler]
+            package: messaging
+            interfaces: [handler]

@@ -63,10 +63,10 @@ wash config put websocket-config \
   max_reconnect_attempts=0 \
   initial_reconnect_delay_ms=1000
 
-# Link component to provider
+# Link component to provider (using standard wasmcloud:messaging interface)
 wash link put test-component websocket-provider \
-  wasmcloud websocket \
-  --interface message-handler \
+  wasmcloud messaging \
+  --interface handler \
   --target-config websocket-config
 ```
 
@@ -77,6 +77,7 @@ Check the wasmCloud host output for:
 - `WebSocket connection established: 101`
 - `Received text message: ... bytes`
 - `Message successfully sent to component ...`
+- `Received message - Subject: websocket.ws://..., Size: ... bytes`
 
 The WebSocket server terminal should show client connections and sent messages.
 

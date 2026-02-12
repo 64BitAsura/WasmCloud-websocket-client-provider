@@ -13,11 +13,17 @@ use crate::config::{LinkConfig, ProviderConfig};
 use crate::websocket::WebSocketClient;
 
 pub(crate) mod bindings {
-    wit_bindgen_wrpc::generate!();
+    wit_bindgen_wrpc::generate!({
+        with: {
+            "wasmcloud:messaging/types@0.2.0": generate,
+            "wasmcloud:messaging/handler@0.2.0": generate,
+        }
+    });
 }
 
-// Import the message-handler interface from WIT
-use bindings::wasmcloud::websocket::message_handler;
+// Import the standard messaging interfaces from WIT
+use bindings::wasmcloud::messaging::handler;
+use bindings::wasmcloud::messaging::types;
 
 /// State for a single WebSocket connection
 struct ConnectionState {
@@ -104,10 +110,12 @@ impl Provider for WebSocketProvider {
             let ws_client = WebSocketClient::new(config_clone.clone());
 
             // Create message handler that forwards to the component via wRPC
+            // using the standard wasmcloud:messaging interface
+            let ws_url = config_clone.websocket_url.clone();
             let result = ws_client
                 .run(move |data| {
-                    // Convert message to WIT format
-                    let message = create_websocket_message(data);
+                    // Convert WebSocket message to a standard broker-message
+                    let message = create_broker_message(data, &ws_url);
 
                     // Spawn a task to send message to component
                     let source = source_id_clone.clone();
@@ -174,37 +182,30 @@ impl Provider for WebSocketProvider {
     }
 }
 
-/// Create a WebSocket message from raw bytes
-fn create_websocket_message(data: Vec<u8>) -> message_handler::WebsocketMessage {
-    let (payload, message_type) = if let Ok(text) = String::from_utf8(data.clone()) {
-        (text, "text".to_string())
-    } else {
-        // For binary data, encode as base64
-        (base64_encode(&data), "binary".to_string())
-    };
-
-    message_handler::WebsocketMessage {
-        payload,
-        message_type,
-        timestamp: std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_secs(),
-        size: data.len() as u32,
+/// Create a broker-message from raw WebSocket data
+///
+/// The subject is set to "websocket.<url>" so the component knows
+/// which WebSocket connection the message originated from.
+/// The body contains the raw bytes of the WebSocket message.
+fn create_broker_message(data: Vec<u8>, websocket_url: &str) -> types::BrokerMessage {
+    types::BrokerMessage {
+        subject: format!("websocket.{}", websocket_url),
+        body: data.into(),
+        reply_to: None,
     }
 }
 
-/// Send message to component via wRPC
+/// Send message to component via wRPC using the standard messaging handler
 async fn send_message_to_component(
     component_id: &str,
-    message: message_handler::WebsocketMessage,
+    message: types::BrokerMessage,
 ) -> anyhow::Result<()> {
     let client = wasmcloud_provider_sdk::get_connection()
         .get_wrpc_client(component_id)
         .await
         .context("failed to get wrpc client")?;
 
-    match message_handler::handle_message(&client, None, &message).await {
+    match handler::handle_message(&client, None, &message).await {
         Ok(Ok(_)) => {
             info!("Message successfully sent to component {}", component_id);
             Ok(())
@@ -221,6 +222,7 @@ async fn send_message_to_component(
 }
 
 /// Base64 encode helper
+#[allow(dead_code)]
 fn base64_encode(data: &[u8]) -> String {
     use base64::{engine::general_purpose, Engine as _};
     general_purpose::STANDARD.encode(data)

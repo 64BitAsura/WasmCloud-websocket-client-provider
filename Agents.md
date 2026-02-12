@@ -377,6 +377,7 @@ cargo audit
 
 **Project**: WasmCloud WebSocket Provider
 **Language**: Rust 2021 Edition
+**Messaging Interface**: `wasmcloud:messaging@0.2.0` (standard)
 **Key Dependencies**: 
 - `wasmcloud-provider-sdk` v0.13.0
 - `tokio-tungstenite` v0.24
@@ -384,7 +385,7 @@ cargo audit
 
 **Architecture**:
 ```
-WebSocket Server → WebSocket Provider (Rust) → wRPC → wasmCloud Component (Wasm)
+WebSocket Server → WebSocket Provider (Rust) → wasmcloud:messaging/handler (wRPC) → wasmCloud Component (Wasm)
 ```
 
 **CI Pipeline**: GitHub Actions
@@ -418,11 +419,11 @@ WebSocket Server → WebSocket Provider (Rust) → wRPC → wasmCloud Component 
 
 ## Maintenance Notes
 
-**Last Updated**: [Date]
+**Last Updated**: 2026-02-12
 **Maintained By**: Development Team
 **Review Frequency**: After each major implementation
 
-**Document Version**: 1.0.0
+**Document Version**: 1.1.0
 
 ---
 
@@ -702,3 +703,116 @@ No migration needed. Existing deployments will use the 10-second default timeout
 - [RFC 6455 WebSocket Protocol](https://tools.ietf.org/html/rfc6455)
 - Issue #N (replace with actual issue number)
 - PR #N (replace with actual PR number)
+
+---
+
+## Implementation Documentation
+
+### Migrate to Standard wasmcloud:messaging Interface - 2026-02-12
+
+**Problem Statement:**
+The provider used a custom `wasmcloud:websocket/message-handler` WIT interface with a `websocket-message` record to forward messages to components. This required components to depend on the custom interface. Switching to the standard `wasmcloud:messaging@0.2.0` interface makes the provider interoperable with any component that implements the standard messaging handler, and aligns with wasmCloud ecosystem conventions.
+
+**Solution Implemented:**
+Replace all custom WIT definitions with the standard `wasmcloud:messaging@0.2.0` package. WebSocket messages are wrapped as `broker-message` records with `subject` set to `websocket.<url>` and `body` containing the raw message bytes.
+
+**Files Modified:**
+- `wit/world.wit`: Changed from defining custom `message-handler` interface to importing `wasmcloud:messaging/handler@0.2.0`
+- `wit/deps/wasmcloud-messaging-0.2.0/package.wit`: Standard messaging WIT (fetched by wash)
+- `src/provider.rs`: Replaced `message_handler::WebsocketMessage` with `types::BrokerMessage`; updated `wit_bindgen_wrpc::generate!` with explicit `with` mappings for versioned interfaces
+- `component/wit/world.wit`: Export `wasmcloud:messaging/handler@0.2.0` instead of `wasmcloud:websocket/message-handler`
+- `component/wit/deps/messaging/messaging.wit`: Added `wasmcloud:messaging@0.2.0` package definition
+- `component/wit/deps.toml`: Changed dep path from `../../wit` to `../../wit/deps/wasmcloud-messaging-0.2.0`
+- `component/src/lib.rs`: Implement `wasmcloud::messaging::handler::Guest` with `BrokerMessage` instead of `WebsocketMessage`
+- `wadm.yaml`: Updated link to `namespace: wasmcloud, package: messaging, interfaces: [handler]`
+- `tests/run_integration_test.sh`: Updated `wash link put` to use `wasmcloud messaging --interface handler`
+
+**Key Code Changes:**
+
+Provider — generating bindings with versioned interface mappings:
+```rust
+pub(crate) mod bindings {
+    wit_bindgen_wrpc::generate!({
+        with: {
+            "wasmcloud:messaging/types@0.2.0": generate,
+            "wasmcloud:messaging/handler@0.2.0": generate,
+        }
+    });
+}
+```
+
+Provider — creating broker-messages from WebSocket data:
+```rust
+fn create_broker_message(data: Vec<u8>, websocket_url: &str) -> types::BrokerMessage {
+    types::BrokerMessage {
+        subject: format!("websocket.{}", websocket_url),
+        body: data.into(),
+        reply_to: None,
+    }
+}
+```
+
+Component — receiving standard broker-messages:
+```rust
+use crate::exports::wasmcloud::messaging::handler::{Guest, BrokerMessage};
+
+impl Guest for WebSocketComponent {
+    fn handle_message(msg: BrokerMessage) -> Result<(), String> {
+        // msg.subject = "websocket.ws://..."
+        // msg.body = raw WebSocket message bytes
+        Ok(())
+    }
+}
+```
+
+**Configuration Changes:**
+```yaml
+# wadm.yaml link - BEFORE
+namespace: wasmcloud
+package: websocket
+interfaces: [message-handler]
+
+# wadm.yaml link - AFTER
+namespace: wasmcloud
+package: messaging
+interfaces: [handler]
+```
+
+**Testing Performed:**
+- ✅ Format check: Passed
+- ✅ Type check: Passed
+- ✅ Clippy: Passed with 0 warnings
+- ✅ Provider build (`wash build`): Passed
+- ✅ Component build (`wash build -p ./component`): Passed
+- ✅ Integration test: Provider connects to WebSocket server and forwards messages to component
+
+**Breaking Changes:**
+- Components must now export `wasmcloud:messaging/handler@0.2.0` instead of `wasmcloud:websocket/message-handler`
+- Message format changed from `WebsocketMessage { payload, message_type, timestamp, size }` to `BrokerMessage { subject, body, reply_to }`
+- Link configuration changed from `package: websocket, interfaces: [message-handler]` to `package: messaging, interfaces: [handler]`
+
+**Migration Guide:**
+1. Update component WIT to export `wasmcloud:messaging/handler@0.2.0` instead of `wasmcloud:websocket/message-handler`
+2. Add `wasmcloud:messaging@0.2.0` WIT dependency to component
+3. Change component handler from `WebsocketMessage` to `BrokerMessage`:
+   - `message.payload` (string) → `msg.body` (bytes) — use `String::from_utf8()` if text
+   - `message.message_type` — no longer provided; infer from content
+   - `message.timestamp` / `message.size` — no longer provided; use `msg.body.len()` for size
+   - New: `msg.subject` contains `"websocket.<url>"` identifying the source connection
+4. Update WADM/link config: `package: messaging`, `interfaces: [handler]`
+5. Rebuild provider and component: `wash build && wash build -p ./component`
+
+**Lessons Learned:**
+- `wit_bindgen_wrpc::generate!` requires explicit `with` mappings for versioned interfaces — both `types` and `handler` must be listed
+- Component and provider WIT versions must match exactly (e.g., both `@0.2.0`) or wRPC invocations fail silently at runtime
+- `deps.toml` path must point to the directory containing the actual WIT package file, not a parent directory with a different package
+- `BrokerMessage.body` uses `Bytes` (not `Vec<u8>`) in the provider — requires `.into()` conversion
+
+**Future Improvements:**
+- Add optional metadata headers via the `subject` field (e.g., `websocket.text.<url>` vs `websocket.binary.<url>`)
+- Support bidirectional messaging using `wasmcloud:messaging/consumer` for sending messages back to WebSocket servers
+- Add `wasmcloud:messaging/consumer` export so components can publish messages
+
+**References:**
+- [wasmcloud:messaging WIT](https://github.com/wasmCloud/wasmCloud/tree/main/crates/provider-messaging-nats)
+- [wit-bindgen-wrpc documentation](https://docs.rs/wit-bindgen-wrpc)

@@ -4,7 +4,7 @@ world component {
   // Import logging for processing data
   import wasi:logging/logging@0.1.0-draft;
 
-  // Import the WebSocket message-handler interface
-  // This allows the component to receive messages from the provider
-  export wasmcloud:websocket/message-handler;
+  // Export the standard wasmcloud:messaging handler interface
+  // This allows the component to receive messages from the WebSocket provider
+  export wasmcloud:messaging/handler@0.2.0;
 }

@@ -1,6 +1,6 @@
 # WebSocket Capability Provider
 
-A wasmCloud capability provider that connects to remote WebSocket servers and forwards received messages to components via wRPC. It implements unidirectional communication (receiving only) with automatic reconnection and configurable message size limits.
+A wasmCloud capability provider that connects to remote WebSocket servers and forwards received messages to components using the standard `wasmcloud:messaging` interface via wRPC. It implements unidirectional communication (receiving only) with automatic reconnection and configurable message size limits.
 
 ## Building
 
@@ -51,23 +51,57 @@ Link configuration values passed via `wash config put`:
 | `max_reconnect_delay_ms` | Max reconnect delay in ms (exponential backoff) | `60000` |
 | `max_message_size` | Max message size in bytes | `1048576` |
 
-## WIT Interface
+## Messaging Interface
 
-The provider imports `wasmcloud:websocket/message-handler`:
+The provider uses the standard `wasmcloud:messaging@0.2.0` interface to forward WebSocket messages to components. Each WebSocket message is wrapped in a `broker-message`:
 
 ```wit
-interface message-handler {
-    record websocket-message {
-        payload: string,
-        message-type: string,
-        timestamp: u64,
-        size: u32,
+// From wasmcloud:messaging@0.2.0
+interface types {
+    record broker-message {
+        subject: string,       // "websocket.<url>" identifying the source connection
+        body: list<u8>,        // Raw WebSocket message bytes (text or binary)
+        reply-to: option<string>,
     }
-    handle-message: func(message: websocket-message) -> result<_, string>;
+}
+
+interface handler {
+    use types.{broker-message};
+    handle-message: func(msg: broker-message) -> result<_, string>;
 }
 ```
 
-Components export this interface to receive WebSocket messages from the provider.
+Components export `wasmcloud:messaging/handler` to receive messages. The `subject` field is set to `websocket.<websocket_url>` so the component knows which connection the message came from. The `body` contains the raw bytes of the WebSocket message.
+
+### Linking
+
+```bash
+# Create named config
+wash config put websocket-config \
+  websocket_url=ws://127.0.0.1:8765
+
+# Link component to provider using wasmcloud:messaging
+wash link put <component-id> <provider-id> \
+  wasmcloud messaging \
+  --interface handler \
+  --target-config websocket-config
+```
+
+Or via WADM:
+
+```yaml
+- type: link
+  properties:
+    target:
+      name: test-component
+      config:
+        - name: websocket-config
+          properties:
+            websocket_url: ws://127.0.0.1:8765
+    namespace: wasmcloud
+    package: messaging
+    interfaces: [handler]
+```
 
 ## Architecture
 
@@ -76,7 +110,8 @@ WebSocket Server
     │ WebSocket messages
     ▼
 WebSocket Provider (Rust + tokio-tungstenite)
-    │ wRPC calls (via NATS)
+    │ wRPC calls via wasmcloud:messaging/handler (over NATS)
     ▼
 wasmCloud Component (WebAssembly)
+    exports wasmcloud:messaging/handler
 ```
