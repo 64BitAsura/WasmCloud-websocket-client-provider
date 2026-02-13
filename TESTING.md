@@ -24,6 +24,14 @@ python3 tests/websocket_server.py
 
 Server listens on `ws://127.0.0.1:8765`, sends JSON messages every 3 seconds, and binary messages every 5th message.
 
+For WSS testing with a self-signed certificate:
+
+```bash
+python3 tests/websocket_server.py --tls
+```
+
+This auto-generates a self-signed cert and listens on `wss://127.0.0.1:8765`.
+
 ### Step 2: Build Provider and Component
 
 ```bash

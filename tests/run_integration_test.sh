@@ -1,7 +1,8 @@
 #!/bin/bash
 set -e
 
-# Ensure wash is in PATH
+# Ensure cargo and wash are in PATH
+. "$HOME/.cargo/env" 2>/dev/null || true
 export PATH="/usr/local/bin:$PATH"
 
 # Colors for output

@@ -1,6 +1,6 @@
 # WebSocket Capability Provider
 
-A wasmCloud capability provider that connects to remote WebSocket servers and forwards received messages to components using the standard `wasmcloud:messaging` interface via wRPC. It implements unidirectional communication (receiving only) with automatic reconnection and configurable message size limits.
+A wasmCloud capability provider that connects to remote WebSocket servers and forwards received messages to components using the standard `wasmcloud:messaging` interface via wRPC. It implements unidirectional communication (receiving only) with automatic reconnection, configurable message size limits, and TLS support for `wss://` connections (via rustls).
 
 ## Building
 
@@ -90,18 +90,23 @@ wash link put <component-id> <provider-id> \
 Or via WADM:
 
 ```yaml
+# Link defined on the component (source) to the provider (target)
 - type: link
   properties:
     target:
-      name: test-component
+      name: websocket-provider
       config:
         - name: websocket-config
           properties:
-            websocket_url: ws://127.0.0.1:8765
+            websocket_url: wss://example.com/ws
     namespace: wasmcloud
     package: messaging
     interfaces: [handler]
 ```
+
+### TLS (wss://)
+
+The provider supports `wss://` URLs out of the box using rustls with Mozilla's WebPKI root certificates. No additional configuration is needed — just use a `wss://` URL in `websocket_url`.
 
 ## Architecture
 

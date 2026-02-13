@@ -10,29 +10,28 @@ spec:
     - name: test-component
       type: component
       properties:
-        image: file://./component/build/custom_template_test_component.wasm
+        image: file://./component/target/wasm32-wasip2/release/custom_template_test_component_s.wasm
       traits:
         - type: spreadscaler
           properties:
             instances: 1
+        # Link from this component (source) to the provider (target)
+        - type: link
+          properties:
+            target:
+              name: websocket-provider
+              config:
+                - name: websocket-config
+                  properties:
+                    websocket_url: wss://www.seismicportal.eu/standing_order/websocket
+                    max_reconnect_attempts: "10"
+                    initial_reconnect_delay_ms: "1000"
+            namespace: wasmcloud
+            package: messaging
+            interfaces: [handler]
 
     - name: websocket-provider
       type: capability
       properties:
         image: file://./build/wasmcloud-provider-websocket.par.gz
         id: websocket-provider
-      traits:
-        # Link the provider to the component on wasmcloud:messaging/handler
-        - type: link
-          properties:
-            target:
-              name: test-component
-              config:
-                - name: websocket-config
-                  properties:
-                    websocket_url: ws://127.0.0.1:8765
-                    max_reconnect_attempts: "0"
-                    initial_reconnect_delay_ms: "1000"
-            namespace: wasmcloud
-            package: messaging
-            interfaces: [handler]

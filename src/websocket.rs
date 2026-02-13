@@ -1,8 +1,22 @@
 use crate::config::LinkConfig;
 use futures_util::StreamExt;
 use tokio::time::sleep;
-use tokio_tungstenite::{connect_async, tungstenite::Message};
+use tokio_tungstenite::{connect_async_tls_with_config, tungstenite::Message, Connector};
 use tracing::{debug, error, info, warn};
+
+/// Build a rustls Connector with webpki root certificates for wss:// connections
+fn build_tls_connector() -> Connector {
+    let root_store =
+        rustls::RootCertStore::from_iter(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
+    let tls_config = rustls::ClientConfig::builder_with_provider(
+        rustls::crypto::ring::default_provider().into(),
+    )
+    .with_safe_default_protocol_versions()
+    .expect("failed to set TLS protocol versions")
+    .with_root_certificates(root_store)
+    .with_no_client_auth();
+    Connector::Rustls(std::sync::Arc::new(tls_config))
+}
 
 /// WebSocket client handler
 pub struct WebSocketClient {
@@ -69,7 +83,21 @@ impl WebSocketClient {
             self.config.websocket_url
         );
 
-        let (ws_stream, response) = connect_async(&self.config.websocket_url).await?;
+        // Use TLS connector for wss:// URLs, plain for ws://
+        let connector = if self.config.websocket_url.starts_with("wss://") {
+            info!("Using TLS (rustls) for wss:// connection");
+            Some(build_tls_connector())
+        } else {
+            None
+        };
+
+        let (ws_stream, response) = connect_async_tls_with_config(
+            &self.config.websocket_url,
+            None,
+            false,
+            connector,
+        )
+        .await?;
 
         info!("WebSocket connection established: {:?}", response.status());
         debug!("Response headers: {:?}", response.headers());
